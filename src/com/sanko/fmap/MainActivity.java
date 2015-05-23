@@ -16,11 +16,11 @@ import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import com.baidu.location.BDLocation;
 import com.baidu.location.BDLocationListener;
 import com.baidu.location.LocationClient;
@@ -28,8 +28,11 @@ import com.baidu.location.LocationClientOption;
 import com.baidu.location.LocationClientOption.LocationMode;
 import com.baidu.mapapi.SDKInitializer;
 import com.baidu.mapapi.map.BaiduMap;
+import com.baidu.mapapi.map.BaiduMap.OnMapClickListener;
 import com.baidu.mapapi.map.BitmapDescriptor;
 import com.baidu.mapapi.map.BitmapDescriptorFactory;
+import com.baidu.mapapi.map.InfoWindow;
+import com.baidu.mapapi.map.MapPoi;
 import com.baidu.mapapi.map.MapStatus;
 import com.baidu.mapapi.map.MapStatusUpdate;
 import com.baidu.mapapi.map.MapStatusUpdateFactory;
@@ -39,10 +42,12 @@ import com.baidu.mapapi.map.MarkerOptions;
 import com.baidu.mapapi.map.MyLocationData;
 import com.baidu.mapapi.map.OverlayOptions;
 import com.baidu.mapapi.model.LatLng;
+import com.baidu.mapapi.overlayutil.DrivingRouteOverlay;
 import com.baidu.mapapi.overlayutil.OverlayManager;
 import com.baidu.mapapi.overlayutil.PoiOverlay;
 import com.baidu.mapapi.search.core.CityInfo;
 import com.baidu.mapapi.search.core.PoiInfo;
+import com.baidu.mapapi.search.core.RouteLine;
 import com.baidu.mapapi.search.core.SearchResult;
 import com.baidu.mapapi.search.poi.OnGetPoiSearchResultListener;
 import com.baidu.mapapi.search.poi.PoiDetailResult;
@@ -50,10 +55,21 @@ import com.baidu.mapapi.search.poi.PoiDetailSearchOption;
 import com.baidu.mapapi.search.poi.PoiNearbySearchOption;
 import com.baidu.mapapi.search.poi.PoiResult;
 import com.baidu.mapapi.search.poi.PoiSearch;
+import com.baidu.mapapi.search.route.DrivingRouteLine;
+import com.baidu.mapapi.search.route.DrivingRoutePlanOption;
+import com.baidu.mapapi.search.route.DrivingRouteResult;
+import com.baidu.mapapi.search.route.OnGetRoutePlanResultListener;
+import com.baidu.mapapi.search.route.PlanNode;
+import com.baidu.mapapi.search.route.RoutePlanSearch;
+import com.baidu.mapapi.search.route.TransitRouteLine;
+import com.baidu.mapapi.search.route.TransitRouteResult;
+import com.baidu.mapapi.search.route.WalkingRouteLine;
+import com.baidu.mapapi.search.route.WalkingRouteResult;
 import com.baidu.mapapi.search.sug.SuggestionSearch;
 
 
-public class MainActivity extends Activity implements OnGetPoiSearchResultListener {
+public class MainActivity extends Activity implements OnGetPoiSearchResultListener, 
+OnMapClickListener, OnGetRoutePlanResultListener {
 	MapView mMapView = null;
 	private LocationMode tempMode = LocationMode.Hight_Accuracy;
 	private String tempcoor="bd09ll";
@@ -72,6 +88,10 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
 	private PoiSearch mPoiSearch = null;
 	private BDLocation loc = null;
 	private SuggestionSearch mSuggestionSearch = null;
+	//搜索相关
+    RoutePlanSearch mSearch = null;  
+    RouteLine route = null;
+    OverlayManager routeOverlay = null;
 	/**
 	 * 搜索关键字输入窗口
 	 */
@@ -126,7 +146,11 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
 		mLocationClient.start();
 		mLocationClient.requestLocation();
 		
-		
+		//地图点击事件处理
+        mBaiduMap.setOnMapClickListener(this);
+        // 初始化搜索模块，注册事件监听
+        mSearch = RoutePlanSearch.newInstance();
+        mSearch.setOnGetRoutePlanResultListener(this);
 				
 				
     
@@ -173,15 +197,42 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
         int id = item.getItemId();
-        if (id == R.id.action_settings) {
+        if (id == R.id.curplace) {
         	center2myLoc();
             return true;
         }else if(id==R.id.findbank){
         	findbank();
         	return true;
+        }else if(id==R.id.gtstation){
+        	waytostation();
+        	return true;
         }
         return super.onOptionsItemSelected(item);
     }
+
+	private void waytostation() {
+		// TODO Auto-generated method stub
+		 //设置起终点信息
+		mBaiduMap.clear();
+		LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+        PlanNode stNode = PlanNode.withLocation(ll);
+        PlanNode enNode = PlanNode.withCityNameAndPlaceName(loc.getCity(), "火车站");
+        mSearch.drivingSearch((new DrivingRoutePlanOption())
+                .from(stNode)
+                .to(enNode));        
+	}
+	
+	private void waytostation(LatLng l) {
+		// TODO Auto-generated method stub
+		 //设置起终点信息
+		mBaiduMap.clear();
+		LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+        PlanNode stNode = PlanNode.withLocation(ll);
+        PlanNode enNode = PlanNode.withLocation(l);
+        mSearch.drivingSearch((new DrivingRoutePlanOption())
+                .from(stNode)
+                .to(enNode));        
+	}
 
 	public class MyLocationListener implements BDLocationListener {
     	
@@ -417,4 +468,94 @@ private class MyPoiOverlay extends OverlayManager {
 	}
 
 }
+
+	@Override
+	public void onGetDrivingRouteResult(DrivingRouteResult result) {
+		// TODO Auto-generated method stub
+		if (result == null) {
+            Toast.makeText(MainActivity.this, "抱歉，未找到结果", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (result.error == SearchResult.ERRORNO.AMBIGUOUS_ROURE_ADDR) {
+            //起终点或途经点地址有岐义，通过以下接口获取建议查询信息
+        	List<PoiInfo> ls = result.getSuggestAddrInfo().getSuggestEndNode();
+        	waytostation(ls.get(0).location);
+        	return;
+        }
+        if (result.error == SearchResult.ERRORNO.NO_ERROR) {
+           route = result.getRouteLines().get(0);
+            DrivingRouteOverlay overlay = new MyDrivingRouteOverlay(mBaiduMap);
+            routeOverlay = overlay;
+            mBaiduMap.setOnMarkerClickListener(overlay);
+            overlay.setData(result.getRouteLines().get(0));
+            overlay.addToMap();
+            overlay.zoomToSpan();
+            re.setText("从这里出发前往"+loc.getCity()+"火车站");
+         
+        }
+            
+            
+       
+	}
+
+	@Override
+	public void onGetTransitRouteResult(TransitRouteResult arg0) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void onGetWalkingRouteResult(WalkingRouteResult arg0) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void onMapClick(LatLng arg0) {
+		// TODO Auto-generated method stub
+		mBaiduMap.hideInfoWindow();
+	}
+
+	@Override
+	public boolean onMapPoiClick(MapPoi arg0) {
+		// TODO Auto-generated method stub
+		return false;
+	}
+	
+	//定制RouteOverly
+    private class MyDrivingRouteOverlay extends DrivingRouteOverlay {
+
+        public MyDrivingRouteOverlay(BaiduMap baiduMap) {
+            super(baiduMap);
+        }
+
+        @Override
+        public boolean onRouteNodeClick(int index){
+        	
+        	 //获取节结果信息
+            LatLng nodeLocation = null;
+            String nodeTitle = null;
+            Object step = route.getAllStep().get(index);
+            
+                nodeLocation = ((DrivingRouteLine.DrivingStep) step).getEntrace().getLocation();
+                nodeTitle = ((DrivingRouteLine.DrivingStep) step).getInstructions();
+           
+
+            if (nodeLocation == null || nodeTitle == null) {
+                return false;
+            }
+        	
+        //	移动节点至中心
+          mBaiduMap.setMapStatus(MapStatusUpdateFactory.newLatLng(nodeLocation));
+          // show popup
+          TextView popupText = new TextView(MainActivity.this);
+          popupText.setBackgroundColor(Color.RED);
+          popupText.setTextColor(Color.BLUE);
+          popupText.setText(nodeTitle);
+          mBaiduMap.showInfoWindow(new InfoWindow(popupText, nodeLocation, 0));
+			return true;
+        	
+        }
+      
+    }
 }

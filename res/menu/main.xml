@@ -3,7 +3,7 @@
     tools:context="com.sanko.fmap.MainActivity" >
 
     <item
-        android:id="@+id/action_settings"
+        android:id="@+id/curplace"
         android:orderInCategory="100"
         android:showAsAction="never"
         android:title="当前位置"/>
@@ -12,5 +12,10 @@
         android:orderInCategory="101"
         android:showAsAction="never"
         android:title="附近银行"/>
+    <item 
+        android:id="@+id/gtstation"
+        android:orderInCategory="101"
+        android:showAsAction="never"
+        android:title="去火车站"/>
 
 </menu>
