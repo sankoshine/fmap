@@ -1,11 +1,18 @@
 package com.sanko.fmap;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -22,18 +29,22 @@ import com.baidu.location.LocationClientOption.LocationMode;
 import com.baidu.mapapi.SDKInitializer;
 import com.baidu.mapapi.map.BaiduMap;
 import com.baidu.mapapi.map.BitmapDescriptor;
+import com.baidu.mapapi.map.BitmapDescriptorFactory;
 import com.baidu.mapapi.map.MapStatus;
 import com.baidu.mapapi.map.MapStatusUpdate;
 import com.baidu.mapapi.map.MapStatusUpdateFactory;
 import com.baidu.mapapi.map.MapView;
+import com.baidu.mapapi.map.Marker;
+import com.baidu.mapapi.map.MarkerOptions;
 import com.baidu.mapapi.map.MyLocationData;
+import com.baidu.mapapi.map.OverlayOptions;
 import com.baidu.mapapi.model.LatLng;
+import com.baidu.mapapi.overlayutil.OverlayManager;
 import com.baidu.mapapi.overlayutil.PoiOverlay;
 import com.baidu.mapapi.search.core.CityInfo;
 import com.baidu.mapapi.search.core.PoiInfo;
 import com.baidu.mapapi.search.core.SearchResult;
 import com.baidu.mapapi.search.poi.OnGetPoiSearchResultListener;
-import com.baidu.mapapi.search.poi.PoiCitySearchOption;
 import com.baidu.mapapi.search.poi.PoiDetailResult;
 import com.baidu.mapapi.search.poi.PoiDetailSearchOption;
 import com.baidu.mapapi.search.poi.PoiNearbySearchOption;
@@ -171,8 +182,8 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
         }
         return super.onOptionsItemSelected(item);
     }
-    
-    public class MyLocationListener implements BDLocationListener {
+
+	public class MyLocationListener implements BDLocationListener {
     	
     	TextView mLocationResult;
     	
@@ -258,11 +269,11 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
     			mPoiSearch = PoiSearch.newInstance();
     			mPoiSearch.setOnGetPoiSearchResultListener(this);
     			mPoiSearch.searchNearby(new PoiNearbySearchOption()
-    			.pageCapacity(15)
+    			.pageCapacity(50)
     			.location(ll)
     			.keyword("银行")
     			.pageNum(0)
-    			.radius(1000));
+    			.radius(2000));
     			
 	}
 
@@ -288,7 +299,7 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
 		}
 		if (result.error == SearchResult.ERRORNO.NO_ERROR) {
 			mBaiduMap.clear();
-			PoiOverlay overlay = new MyPoiOverlay(mBaiduMap);
+			MyPoiOverlay overlay = new MyPoiOverlay(mBaiduMap);
 			mBaiduMap.setOnMarkerClickListener(overlay);
 			overlay.setData(result);
 			overlay.addToMap();
@@ -310,22 +321,100 @@ public class MainActivity extends Activity implements OnGetPoiSearchResultListen
 		}
 	}
 	
-	private class MyPoiOverlay extends PoiOverlay {
+//	private class MyPoiOverlay extends PoiOverlay {
+//
+//		public MyPoiOverlay(BaiduMap baiduMap) {
+//			super(baiduMap);
+//		}
+//
+//		@Override
+//		public boolean onPoiClick(int index) {
+//			super.onPoiClick(index);
+//			PoiInfo poi = getPoiResult().getAllPoi().get(index);
+//			// if (poi.hasCaterDetails) {
+//				mPoiSearch.searchPoiDetail((new PoiDetailSearchOption())
+//						.poiUid(poi.uid));
+//			// }
+//			return true;
+//		}
+//	}
+//	
+    /**
+* 覆盖物
+*/
+private class MyPoiOverlay extends OverlayManager {
+	private PoiResult poiResult = null;
 
-		public MyPoiOverlay(BaiduMap baiduMap) {
-			super(baiduMap);
-		}
+	public MyPoiOverlay(BaiduMap baiduMap) {
+		super(baiduMap);
+	}
 
-		@Override
-		public boolean onPoiClick(int index) {
-			super.onPoiClick(index);
-			PoiInfo poi = getPoiResult().getAllPoi().get(index);
-			// if (poi.hasCaterDetails) {
-				mPoiSearch.searchPoiDetail((new PoiDetailSearchOption())
-						.poiUid(poi.uid));
-			// }
+	public void setData(PoiResult poiResult) {
+		this.poiResult = poiResult;
+	}
+
+	@Override
+	public boolean onMarkerClick(Marker marker) {
+		if (marker.getExtraInfo() != null) {
+			int index = marker.getExtraInfo().getInt("index");
+			PoiInfo poi = poiResult.getAllPoi().get(index);
+
+			// 详情搜索
+			mPoiSearch.searchPoiDetail((new PoiDetailSearchOption())
+					.poiUid(poi.uid));
 			return true;
 		}
+		return false;
 	}
-	
+
+	@Override
+	public List<OverlayOptions> getOverlayOptions() {
+		if ((this.poiResult == null)
+				|| (this.poiResult.getAllPoi() == null))
+			return null;
+		ArrayList<OverlayOptions> arrayList = new ArrayList<OverlayOptions>();
+		for (int i = 0; i < this.poiResult.getAllPoi().size(); i++) {
+			if (this.poiResult.getAllPoi().get(i).location == null)
+				continue;
+			// 给marker加上标签
+			Bundle bundle = new Bundle();
+			bundle.putInt("index", i);
+			arrayList.add(new MarkerOptions()
+					.icon(BitmapDescriptorFactory
+							.fromBitmap(setNumToIcon(i+1))).extraInfo(bundle)
+					.position(this.poiResult.getAllPoi().get(i).location));
+		}
+		return arrayList;
+	}
+
+	/**
+	 * 往图片添加数字
+	 */
+	private Bitmap setNumToIcon(int num) {
+		BitmapDrawable bd = (BitmapDrawable) getResources().getDrawable(
+				R.drawable.icon_gcoding);
+		Bitmap bitmap = bd.getBitmap().copy(Bitmap.Config.ARGB_8888, true);
+		Canvas canvas = new Canvas(bitmap);
+
+		Paint paint = new Paint();
+		paint.setColor(Color.WHITE);
+		paint.setAntiAlias(true);
+		int widthX;
+		int heightY = 0;
+		if (num < 10) {
+			paint.setTextSize(30);
+			widthX = 8;
+			heightY = 6;
+		} else {
+			paint.setTextSize(20);
+			widthX = 11;
+		}
+
+		canvas.drawText(String.valueOf(num),
+				((bitmap.getWidth() / 2) - widthX),
+				((bitmap.getHeight() / 2) + heightY), paint);
+		return bitmap;
+	}
+
+}
 }
