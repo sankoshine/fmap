@@ -4,10 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import android.app.Activity;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -16,11 +12,9 @@ import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
-import android.view.View;
-import android.widget.ArrayAdapter;
-import android.widget.AutoCompleteTextView;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import com.baidu.location.BDLocation;
 import com.baidu.location.BDLocationListener;
 import com.baidu.location.LocationClient;
@@ -44,10 +38,8 @@ import com.baidu.mapapi.map.OverlayOptions;
 import com.baidu.mapapi.model.LatLng;
 import com.baidu.mapapi.overlayutil.DrivingRouteOverlay;
 import com.baidu.mapapi.overlayutil.OverlayManager;
-import com.baidu.mapapi.overlayutil.PoiOverlay;
 import com.baidu.mapapi.search.core.CityInfo;
 import com.baidu.mapapi.search.core.PoiInfo;
-import com.baidu.mapapi.search.core.RouteLine;
 import com.baidu.mapapi.search.core.SearchResult;
 import com.baidu.mapapi.search.poi.OnGetPoiSearchResultListener;
 import com.baidu.mapapi.search.poi.PoiDetailResult;
@@ -56,25 +48,21 @@ import com.baidu.mapapi.search.poi.PoiNearbySearchOption;
 import com.baidu.mapapi.search.poi.PoiResult;
 import com.baidu.mapapi.search.poi.PoiSearch;
 import com.baidu.mapapi.search.route.DrivingRouteLine;
+import com.baidu.mapapi.search.route.DrivingRouteLine.DrivingStep;
 import com.baidu.mapapi.search.route.DrivingRoutePlanOption;
 import com.baidu.mapapi.search.route.DrivingRouteResult;
 import com.baidu.mapapi.search.route.OnGetRoutePlanResultListener;
 import com.baidu.mapapi.search.route.PlanNode;
 import com.baidu.mapapi.search.route.RoutePlanSearch;
-import com.baidu.mapapi.search.route.TransitRouteLine;
 import com.baidu.mapapi.search.route.TransitRouteResult;
-import com.baidu.mapapi.search.route.WalkingRouteLine;
 import com.baidu.mapapi.search.route.WalkingRouteResult;
-import com.baidu.mapapi.search.sug.SuggestionSearch;
 
 
 public class MainActivity extends Activity implements OnGetPoiSearchResultListener, 
 OnMapClickListener, OnGetRoutePlanResultListener {
+	//UI：上方为textview，下方为mapview
 	MapView mMapView = null;
-	private LocationMode tempMode = LocationMode.Hight_Accuracy;
-	private String tempcoor="bd09ll";
 	TextView re = null;
-	private SDKReceiver mReceiver;
 	public LocationClient mLocationClient = null;
 	public BDLocationListener myListener = new MyLocationListener();
 	BaiduMap mBaiduMap = null;
@@ -82,63 +70,28 @@ OnMapClickListener, OnGetRoutePlanResultListener {
 	BitmapDescriptor mCurrentMarker;
 	boolean isFirstLoc = true;
 	public MyLocationListener mMyLocationListener;
-	private double mCurrentLantitude;
-	private double mCurrentLongitude;
-	protected int mXDirection;  
 	private PoiSearch mPoiSearch = null;
 	private BDLocation loc = null;
-	private SuggestionSearch mSuggestionSearch = null;
-	//搜索相关
     RoutePlanSearch mSearch = null;  
-    RouteLine route = null;
     OverlayManager routeOverlay = null;
-	/**
-	 * 搜索关键字输入窗口
-	 */
-	private AutoCompleteTextView keyWorldsView = null;
-	private ArrayAdapter<String> sugAdapter = null;
-	private int load_Index = 0;
-	/**
-	 * 构造广播监听类，监听 SDK key 验证以及网络异常广播
-	 */
-	public class SDKReceiver extends BroadcastReceiver {
-		public void onReceive(Context context, Intent intent) {
-			String s = intent.getAction();
-			TextView text = (TextView) findViewById(R.id.result_appear);
-			text.setTextColor(Color.RED);
-			if (s.equals(SDKInitializer.SDK_BROADTCAST_ACTION_STRING_PERMISSION_CHECK_ERROR)) {
-				text.setText("key 验证出错! 请在 AndroidManifest.xml 文件中检查 key 设置");
-			} else if (s
-					.equals(SDKInitializer.SDK_BROADCAST_ACTION_STRING_NETWORK_ERROR)) {
-				text.setText("网络出错");
-			}else{
-				text.setText("ok");
-			}
-		}
-	}
+    DrivingRouteLine route = null;
 	
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-      //在使用SDK各组件之前初始化context信息，传入ApplicationContext
+        //在使用SDK各组件之前初始化context信息，传入ApplicationContext
         //注意该方法要再setContentView方法之前实现  
         SDKInitializer.initialize(getApplicationContext());  
         setContentView(R.layout.main);
-     // 注册 SDK 广播监听者
-     		IntentFilter iFilter = new IntentFilter();
-     		iFilter.addAction(SDKInitializer.SDK_BROADTCAST_ACTION_STRING_PERMISSION_CHECK_ERROR);
-     		iFilter.addAction(SDKInitializer.SDK_BROADCAST_ACTION_STRING_NETWORK_ERROR);
-     		mReceiver = new SDKReceiver();
-     		registerReceiver(mReceiver, iFilter);
-      //获取地图控件引用  
+        
         mMapView = (MapView) findViewById(R.id.bmapView);
         mBaiduMap = mMapView.getMap();
         re = (TextView)findViewById(R.id.result_appear);
         mLocationClient = new LocationClient(getApplicationContext());     //声明LocationClient类
         mLocationClient.registerLocationListener( myListener ); 
         LocationClientOption option = new LocationClientOption();
-		option.setLocationMode(tempMode);//设置定位模式
-		option.setCoorType(tempcoor);//返回的定位结果是百度经纬度，默认值gcj02
+		option.setLocationMode(LocationMode.Hight_Accuracy);//设置定位模式
+		option.setCoorType("bd09ll");//返回的定位结果是百度经纬度，默认值gcj02
 		int span=1000;
 		option.setScanSpan(span);//设置发起定位请求的间隔时间为5000ms
 		option.setIsNeedAddress(true);
@@ -211,10 +164,9 @@ OnMapClickListener, OnGetRoutePlanResultListener {
     }
 
 	private void waytostation() {
-		// TODO Auto-generated method stub
 		 //设置起终点信息
 		mBaiduMap.clear();
-		LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+		LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
         PlanNode stNode = PlanNode.withLocation(ll);
         PlanNode enNode = PlanNode.withCityNameAndPlaceName(loc.getCity(), "火车站");
         mSearch.drivingSearch((new DrivingRoutePlanOption())
@@ -223,10 +175,9 @@ OnMapClickListener, OnGetRoutePlanResultListener {
 	}
 	
 	private void waytostation(LatLng l) {
-		// TODO Auto-generated method stub
 		 //设置起终点信息
 		mBaiduMap.clear();
-		LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+		LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
         PlanNode stNode = PlanNode.withLocation(ll);
         PlanNode enNode = PlanNode.withLocation(l);
         mSearch.drivingSearch((new DrivingRoutePlanOption())
@@ -242,33 +193,10 @@ OnMapClickListener, OnGetRoutePlanResultListener {
     	public void onReceiveLocation(BDLocation location) {
     		if (location == null)
     	            return ;
-    		loc = location;
-    		mCurrentLantitude = location.getLatitude();
-    		mCurrentLongitude = location.getLongitude();
-    		StringBuffer sb = new StringBuffer(256);
-//    		sb.append("time : ");
-//    		sb.append(location.getTime());
-//    		sb.append("\nerror code : ");
-//    		sb.append(location.getLocType());
-//    		sb.append("\nlatitude : ");
-//    		sb.append(location.getLatitude());
-//    		sb.append("\nlontitude : ");
-//    		sb.append(location.getLongitude());
-//    		sb.append("\nradius : ");
-//    		sb.append(location.getRadius());
-    		if (location.getLocType() == BDLocation.TypeGpsLocation){
-    			sb.append("\nspeed : ");
-    			sb.append(location.getSpeed());
-    			sb.append("\nsatellite : ");
-    			sb.append(location.getSatelliteNumber());
-    		} else if (location.getLocType() == BDLocation.TypeNetWorkLocation){
-//    			sb.append("\naddr : ");
-    			sb.append("当前位置："+location.getAddrStr());
-    		} 
+    		loc = location;  		
 
     		MyLocationData locData = new MyLocationData.Builder()
-			.accuracy(location.getRadius())
-			.direction(mXDirection)
+    		.accuracy(location.getRadius())
 			.latitude(location.getLatitude())
 			.longitude(location.getLongitude()).build();
     		mBaiduMap.setMyLocationData(locData); 
@@ -296,7 +224,7 @@ OnMapClickListener, OnGetRoutePlanResultListener {
     
     private void center2myLoc()
     {
-    	LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+    	LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
     	mBaiduMap.clear();
 		
     	try {
@@ -310,13 +238,13 @@ OnMapClickListener, OnGetRoutePlanResultListener {
     	    mBaiduMap.animateMapStatus(mMapStatusUpdate);
     	    re.setText("当前位置："+loc.getAddrStr());
 		} catch (NumberFormatException e) {
-			Toast.makeText(this, "错误", Toast.LENGTH_SHORT).show();
+			Toast.makeText(this, "定位到当前位置发生错误", Toast.LENGTH_SHORT).show();
 		}
     }
     
     private void findbank() {
     	//POI
-    	LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+    	LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
     			mPoiSearch = PoiSearch.newInstance();
     			mPoiSearch.setOnGetPoiSearchResultListener(this);
     			mPoiSearch.searchNearby(new PoiNearbySearchOption()
@@ -330,7 +258,6 @@ OnMapClickListener, OnGetRoutePlanResultListener {
 
 	@Override
 	public void onGetPoiDetailResult(PoiDetailResult result) {
-		// TODO Auto-generated method stub
 		if (result.error != SearchResult.ERRORNO.NO_ERROR) {
 			Toast.makeText(MainActivity.this, "抱歉，未找到结果", Toast.LENGTH_SHORT)
 					.show();
@@ -341,7 +268,6 @@ OnMapClickListener, OnGetRoutePlanResultListener {
 
 	@Override
 	public void onGetPoiResult(PoiResult result) {
-		// TODO Auto-generated method stub
 		if (result == null
 				|| result.error == SearchResult.ERRORNO.RESULT_NOT_FOUND) {
 			Toast.makeText(MainActivity.this, "未找到结果", Toast.LENGTH_LONG)
@@ -471,7 +397,6 @@ private class MyPoiOverlay extends OverlayManager {
 
 	@Override
 	public void onGetDrivingRouteResult(DrivingRouteResult result) {
-		// TODO Auto-generated method stub
 		if (result == null) {
             Toast.makeText(MainActivity.this, "抱歉，未找到结果", Toast.LENGTH_SHORT).show();
             return;
@@ -499,26 +424,20 @@ private class MyPoiOverlay extends OverlayManager {
 	}
 
 	@Override
-	public void onGetTransitRouteResult(TransitRouteResult arg0) {
-		// TODO Auto-generated method stub
-		
+	public void onGetTransitRouteResult(TransitRouteResult arg0) {		
 	}
 
 	@Override
-	public void onGetWalkingRouteResult(WalkingRouteResult arg0) {
-		// TODO Auto-generated method stub
-		
+	public void onGetWalkingRouteResult(WalkingRouteResult arg0) {		
 	}
 
 	@Override
 	public void onMapClick(LatLng arg0) {
-		// TODO Auto-generated method stub
 		mBaiduMap.hideInfoWindow();
 	}
 
 	@Override
 	public boolean onMapPoiClick(MapPoi arg0) {
-		// TODO Auto-generated method stub
 		return false;
 	}
 	
@@ -535,10 +454,10 @@ private class MyPoiOverlay extends OverlayManager {
         	 //获取节结果信息
             LatLng nodeLocation = null;
             String nodeTitle = null;
-            Object step = route.getAllStep().get(index);
+            DrivingStep step = route.getAllStep().get(index);
             
-                nodeLocation = ((DrivingRouteLine.DrivingStep) step).getEntrace().getLocation();
-                nodeTitle = ((DrivingRouteLine.DrivingStep) step).getInstructions();
+                nodeLocation = step.getEntrace().getLocation();
+                nodeTitle = step.getInstructions();
            
 
             if (nodeLocation == null || nodeTitle == null) {
