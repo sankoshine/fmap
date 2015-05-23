@@ -9,6 +9,8 @@ import android.graphics.Color;
 import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -26,9 +28,21 @@ import com.baidu.mapapi.map.MapStatusUpdateFactory;
 import com.baidu.mapapi.map.MapView;
 import com.baidu.mapapi.map.MyLocationData;
 import com.baidu.mapapi.model.LatLng;
+import com.baidu.mapapi.overlayutil.PoiOverlay;
+import com.baidu.mapapi.search.core.CityInfo;
+import com.baidu.mapapi.search.core.PoiInfo;
+import com.baidu.mapapi.search.core.SearchResult;
+import com.baidu.mapapi.search.poi.OnGetPoiSearchResultListener;
+import com.baidu.mapapi.search.poi.PoiCitySearchOption;
+import com.baidu.mapapi.search.poi.PoiDetailResult;
+import com.baidu.mapapi.search.poi.PoiDetailSearchOption;
+import com.baidu.mapapi.search.poi.PoiNearbySearchOption;
+import com.baidu.mapapi.search.poi.PoiResult;
+import com.baidu.mapapi.search.poi.PoiSearch;
+import com.baidu.mapapi.search.sug.SuggestionSearch;
 
 
-public class MainActivity extends Activity {
+public class MainActivity extends Activity implements OnGetPoiSearchResultListener {
 	MapView mMapView = null;
 	private LocationMode tempMode = LocationMode.Hight_Accuracy;
 	private String tempcoor="bd09ll";
@@ -44,6 +58,15 @@ public class MainActivity extends Activity {
 	private double mCurrentLantitude;
 	private double mCurrentLongitude;
 	protected int mXDirection;  
+	private PoiSearch mPoiSearch = null;
+	private BDLocation loc = null;
+	private SuggestionSearch mSuggestionSearch = null;
+	/**
+	 * 搜索关键字输入窗口
+	 */
+	private AutoCompleteTextView keyWorldsView = null;
+	private ArrayAdapter<String> sugAdapter = null;
+	private int load_Index = 0;
 	/**
 	 * 构造广播监听类，监听 SDK key 验证以及网络异常广播
 	 */
@@ -91,7 +114,6 @@ public class MainActivity extends Activity {
 		mLocationClient.setLocOption(option);
 		mLocationClient.start();
 		mLocationClient.requestLocation();
-		
 		
 		
 				
@@ -143,6 +165,9 @@ public class MainActivity extends Activity {
         if (id == R.id.action_settings) {
         	center2myLoc();
             return true;
+        }else if(id==R.id.findbank){
+        	findbank();
+        	return true;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -155,6 +180,7 @@ public class MainActivity extends Activity {
     	public void onReceiveLocation(BDLocation location) {
     		if (location == null)
     	            return ;
+    		loc = location;
     		mCurrentLantitude = location.getLatitude();
     		mCurrentLongitude = location.getLongitude();
     		StringBuffer sb = new StringBuffer(256);
@@ -183,17 +209,14 @@ public class MainActivity extends Activity {
 			.direction(mXDirection)
 			.latitude(location.getLatitude())
 			.longitude(location.getLongitude()).build();
-	mBaiduMap.setMyLocationData(locData); 
-//    MyLocationConfiguration config = new MyLocationConfiguration(  
-//            mCurrentMode, true, null);  
-//    mBaiduMap.setMyLocationConfigeration(config);  
+    		mBaiduMap.setMyLocationData(locData); 
 		
 	if (isFirstLoc) {
 		isFirstLoc = false;
 		center2myLoc();
 	}
 	
-	logMsg(sb.toString());
+	
     	}
     	
     	public void logMsg(String str) {
@@ -212,6 +235,8 @@ public class MainActivity extends Activity {
     private void center2myLoc()
     {
     	LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+    	mBaiduMap.clear();
+		
     	try {
     		MapStatus mMapStatus = new MapStatus.Builder()
             .target(ll)
@@ -221,10 +246,86 @@ public class MainActivity extends Activity {
     	    MapStatusUpdate mMapStatusUpdate = MapStatusUpdateFactory.newMapStatus(mMapStatus);
     	    //改变地图状态
     	    mBaiduMap.animateMapStatus(mMapStatusUpdate);
+    	    re.setText("当前位置："+loc.getAddrStr());
 		} catch (NumberFormatException e) {
 			Toast.makeText(this, "错误", Toast.LENGTH_SHORT).show();
 		}
     }
     
-    
+    private void findbank() {
+    	//POI
+    	LatLng ll = new LatLng(mCurrentLantitude, mCurrentLongitude);
+    			mPoiSearch = PoiSearch.newInstance();
+    			mPoiSearch.setOnGetPoiSearchResultListener(this);
+    			mPoiSearch.searchNearby(new PoiNearbySearchOption()
+    			.pageCapacity(15)
+    			.location(ll)
+    			.keyword("银行")
+    			.pageNum(0)
+    			.radius(1000));
+    			
+	}
+
+	@Override
+	public void onGetPoiDetailResult(PoiDetailResult result) {
+		// TODO Auto-generated method stub
+		if (result.error != SearchResult.ERRORNO.NO_ERROR) {
+			Toast.makeText(MainActivity.this, "抱歉，未找到结果", Toast.LENGTH_SHORT)
+					.show();
+		} else {
+			re.setText(result.getName());
+		}
+	}
+
+	@Override
+	public void onGetPoiResult(PoiResult result) {
+		// TODO Auto-generated method stub
+		if (result == null
+				|| result.error == SearchResult.ERRORNO.RESULT_NOT_FOUND) {
+			Toast.makeText(MainActivity.this, "未找到结果", Toast.LENGTH_LONG)
+			.show();
+			return;
+		}
+		if (result.error == SearchResult.ERRORNO.NO_ERROR) {
+			mBaiduMap.clear();
+			PoiOverlay overlay = new MyPoiOverlay(mBaiduMap);
+			mBaiduMap.setOnMarkerClickListener(overlay);
+			overlay.setData(result);
+			overlay.addToMap();
+			overlay.zoomToSpan();
+			re.setText("共搜索到"+result.getTotalPoiNum()+"家银行");
+			return;
+		}
+		if (result.error == SearchResult.ERRORNO.AMBIGUOUS_KEYWORD) {
+
+			// 当输入关键字在本市没有找到，但在其他城市找到时，返回包含该关键字信息的城市列表
+			String strInfo = "在";
+			for (CityInfo cityInfo : result.getSuggestCityList()) {
+				strInfo += cityInfo.city;
+				strInfo += ",";
+			}
+			strInfo += "找到结果";
+			Toast.makeText(MainActivity.this, strInfo, Toast.LENGTH_LONG)
+					.show();
+		}
+	}
+	
+	private class MyPoiOverlay extends PoiOverlay {
+
+		public MyPoiOverlay(BaiduMap baiduMap) {
+			super(baiduMap);
+		}
+
+		@Override
+		public boolean onPoiClick(int index) {
+			super.onPoiClick(index);
+			PoiInfo poi = getPoiResult().getAllPoi().get(index);
+			// if (poi.hasCaterDetails) {
+				mPoiSearch.searchPoiDetail((new PoiDetailSearchOption())
+						.poiUid(poi.uid));
+			// }
+			return true;
+		}
+	}
+	
 }

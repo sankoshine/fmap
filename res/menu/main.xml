@@ -6,6 +6,11 @@
         android:id="@+id/action_settings"
         android:orderInCategory="100"
         android:showAsAction="never"
-        android:title="@string/action_settings"/>
+        android:title="当前位置"/>
+    <item 
+        android:id="@+id/findbank"
+        android:orderInCategory="101"
+        android:showAsAction="never"
+        android:title="附近银行"/>
 
 </menu>
