@@ -2,7 +2,7 @@ package com.sanko.fmap;
 
 import java.util.ArrayList;
 import java.util.List;
-
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -10,11 +10,13 @@ import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.View.OnClickListener;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import com.baidu.location.BDLocation;
 import com.baidu.location.BDLocationListener;
 import com.baidu.location.LocationClient;
@@ -55,6 +57,13 @@ import com.baidu.mapapi.search.route.PlanNode;
 import com.baidu.mapapi.search.route.RoutePlanSearch;
 import com.baidu.mapapi.search.route.TransitRouteResult;
 import com.baidu.mapapi.search.route.WalkingRouteResult;
+import com.iflytek.cloud.GrammarListener;
+import com.iflytek.cloud.RecognizerListener;
+import com.iflytek.cloud.RecognizerResult;
+import com.iflytek.cloud.SpeechConstant;
+import com.iflytek.cloud.SpeechError;
+import com.iflytek.cloud.SpeechRecognizer;
+import com.iflytek.cloud.SpeechUtility;
 
 
 public class MainActivity extends Activity 
@@ -80,8 +89,14 @@ implements OnGetPoiSearchResultListener, OnGetRoutePlanResultListener {
 	//route
 	RoutePlanSearch mSearch = null;
     DrivingRouteLine route = null;
+    
+    //asr
+	protected Toast mToast;
+	SpeechRecognizer mAsr;
+	boolean asr_flag = true;
+	boolean asrInit = false;
 	
-    @Override
+    @SuppressLint("ShowToast") @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         //初始化要在setContentView方法之前实现  
@@ -91,6 +106,7 @@ implements OnGetPoiSearchResultListener, OnGetRoutePlanResultListener {
         mMapView = (MapView) findViewById(R.id.bmapView);
         mBaiduMap = mMapView.getMap();
         re = (TextView)findViewById(R.id.result_appear);
+        mToast = Toast.makeText(this,"",Toast.LENGTH_SHORT);	
         
         //定位出当前位置
         mLocationClient = new LocationClient(getApplicationContext());
@@ -121,9 +137,38 @@ implements OnGetPoiSearchResultListener, OnGetRoutePlanResultListener {
 			@Override
 			public void onMapClick(LatLng arg0) {
 				mBaiduMap.hideInfoWindow();
+				
 			}
-		});   
+		});
+        
+        //语音识别初始化
+        SpeechUtility.createUtility(this, SpeechConstant.APPID +"=5564906f");
+        mAsr = SpeechRecognizer.createRecognizer(this, null);    	
+    	String mCloudGrammar = "#ABNF 1.0 UTF-8;\n"
+    			+ "language zh-CN;\n"
+    			+ "mode voice;\n\n"
+    			+ "root $main;\n"
+    			+ "$main = $v;\n"
+    			+ "$v = 去火车站|附近银行|当前位置;";
+    	mAsr.setParameter(SpeechConstant.TEXT_ENCODING, "utf-8");
+    	mAsr.setParameter(SpeechConstant.ENGINE_TYPE, "cloud");
+    	mAsr.setParameter(SpeechConstant.RESULT_TYPE, "json");
+    	mAsr.buildGrammar("abnf", mCloudGrammar , cloudGrammarListener);
+    	re.setOnClickListener(new asrclicklistener());
+    	
 	}
+    
+    //Toast跳提示
+    private void mTip(final String str)
+    {
+    	runOnUiThread(new Runnable() {
+    		@Override
+    		public void run() {
+    			mToast.setText(str);
+    			mToast.show();
+    		}
+    	});
+    }
     
     @Override  
     protected void onDestroy() {  
@@ -141,25 +186,108 @@ implements OnGetPoiSearchResultListener, OnGetRoutePlanResultListener {
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.curplace) {
-        	mode = 0;
+        if (id == R.id.curplace) {        	
         	center2myLoc();
             return true;
         }else if(id == R.id.findbank){
-        	mode = 1;
         	findbank();
         	return true;
         }else if(id == R.id.gtstation){
-        	mode = 2;
         	waytostation();
         	return true;
         }
         return super.onOptionsItemSelected(item);
+    }  
+    
+    //XXX ==== 语音识别 ==== 
+    
+    public class asrclicklistener implements OnClickListener{
+		@Override
+		public void onClick(View arg0) {
+			if(asrInit==false){
+				mTip("等一下");
+				return;
+			}
+			if(asr_flag){
+				asr_flag = false;
+				mAsr.startListening(mRecognizerListener);
+			}else{
+				asr_flag = true;
+				mTip("听完了");
+				mAsr.stopListening();
+			}
+		}		
     }
+        
+    private GrammarListener cloudGrammarListener = new GrammarListener() {
+		@Override
+		public void onBuildFinish(String grammarId, SpeechError error) {
+			if(error == null){ 
+				if(!TextUtils.isEmpty(grammarId)){
+					mAsr.setParameter(SpeechConstant.CLOUD_GRAMMAR, grammarId);
+					asrInit = true;
+				}
+			}       
+		}
+    };
+
+    private RecognizerListener mRecognizerListener = new RecognizerListener() {
+        
+        @Override
+        public void onVolumeChanged(int volume) {
+        	if(volume==0){
+        		mTip("大点声");
+        	}else{
+        		mTip("在听");
+        	}
+        }
+        
+        @Override
+        public void onResult(final RecognizerResult result, boolean isLast) {
+        	if (null != result) {
+        		String key = result.getResultString();
+        		if(key.contains("位置")){
+        			center2myLoc();
+        			mTip("当前位置");
+        		}else if(key.contains("银行")){
+        			findbank();
+        			mTip("附近银行");
+        		}else if(key.contains("火车站")){
+        			waytostation();
+        			mTip("去火车站");
+        		}else{
+        			mTip("没听懂");
+        		}
+        	} else {
+        		mTip("没听懂");
+        	}	
+        }
+        
+        @Override
+        public void onEndOfSpeech() {
+        	mTip("在想");
+        	asr_flag = true;
+        }
+        
+        @Override
+        public void onBeginOfSpeech() {
+        	mTip("在听");
+        }
+
+		@Override
+		public void onError(SpeechError error) {
+			mTip("没听懂");
+		}
+
+		@Override
+		public void onEvent(int eventType, int arg1, int arg2, Bundle obj) {
+		}
+    };
 
     //XXX ==== locate ====
     
     private void center2myLoc() {
+    	mode = 0;
     	LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
     	mBaiduMap.clear();
     	//居中并放大
@@ -196,6 +324,7 @@ implements OnGetPoiSearchResultListener, OnGetRoutePlanResultListener {
     //XXX ==== poi ====
     
     private void findbank() {
+    	mode = 1;
     	LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
     	mPoiSearch.searchNearby(new PoiNearbySearchOption()
     	.pageCapacity(50)//最多显示50个
@@ -303,6 +432,7 @@ implements OnGetPoiSearchResultListener, OnGetRoutePlanResultListener {
     //XXX ==== route ====
     
 	private void waytostation() {
+    	mode = 2;
 		mBaiduMap.clear();
 		LatLng ll = new LatLng(loc.getLatitude(), loc.getLongitude());
 		//起点：当前位置，终点：当地火车站

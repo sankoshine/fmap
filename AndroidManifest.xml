@@ -3,6 +3,8 @@
     package="com.sanko.fmap"
     android:versionCode="1"
     android:versionName="1.0" >
+    <!--获取手机录音机使用权限，听写、识别、语义理解需要用到此权限 -->  
+<uses-permission android:name="android.permission.RECORD_AUDIO"/>  
  <!-- 这个权限用于进行网络定位-->
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"></uses-permission>
 <!-- 这个权限用于访问GPS定位-->
